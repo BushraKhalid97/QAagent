@@ -2,14 +2,20 @@
   "name": "autoqa",
   "version": "1.0.0",
   "private": true,
-  "description": "Automated QA runner: give it a URL + login and it discovers every screen, runs UI/functional/a11y/responsive/security checks and reports PASS/FAIL.",
-  "bin": { "autoqa": "run.js" },
+  "description": "AI tester for any web app: give it a URL + login; it understands the business flows, writes and runs test cases like a manual tester, and reports PASS/FAIL. Includes no-AI standard checks.",
+  "bin": {
+    "autoqa": "run.js",
+    "autoqa-ai": "agent.js"
+  },
   "scripts": {
+    "ai": "node agent.js",
     "qa": "node run.js",
     "ui": "node server.js",
+    "test": "node test/guard.test.js",
     "setup": "npx playwright install chromium"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "playwright": "^1.48.0"
   }
 }

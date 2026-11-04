@@ -1,15 +1,137 @@
-# AutoQA — one-command QA for any web app
+# AutoQA — an AI tester for any web app
 
-Give AutoQA a **URL** and **login credentials**. It finds every screen, runs the
-test cases below, and gives you a **PASS / FAIL** result plus a detailed HTML
-report with screenshots. You don't need to write any test scripts.
+Give AutoQA a **URL** and a **login**. It tests your application the way an
+experienced manual tester would, then hands you a **PASS / FAIL QA report**.
+You don't need to write test scripts or documentation.
 
-It works on any web app (React, Angular, Vue, Next.js, server-rendered…), not
-just FleetFuel.
+AutoQA has two tools:
+
+| | **AI Tester** (`agent.js`) | **Standard checks** (`run.js`) |
+| --- | --- | --- |
+| What it does | Understands the business, writes test cases, and runs each one step by step like a manual tester | Crawls every screen and runs automatic checks on every page, button and form |
+| Finds | Broken business flows: data not saved, wrong values, failed edits/deletes, missing validation, broken cross-module flows | Crashes, JS/API errors, broken data, layout/accessibility issues, security gaps |
+| Needs | A Claude API key | Nothing extra |
+
+Both work on any web app (React, Angular, Vue, Next.js, server-rendered…).
 
 ---
 
-## 1. Setup (once)
+## AI Tester: how it works
+
+```
+URL + login
+   │
+   ▼
+1. EXPLORE     visits every screen; opens every "Add / New / Edit / Connect…" form
+   │           (nothing is saved while exploring)
+   ▼
+2. UNDERSTAND  Claude works out the business domain, its modules, the records each
+   │           module manages (with their fields) and the user journeys, including
+   │           journeys that cross modules
+   ▼
+3. PLAN        Claude writes test cases like a QA lead:
+   │             P1  full lifecycle of every record: create → verify → edit → verify → delete → verify gone
+   │                 core workflows and cross-module effects
+   │             P2  validation (empty/invalid/duplicate input), search, filter, sort, paging, reports
+   │             P3  edge cases (special characters, boundaries, cancel, back/refresh)
+   ▼
+4. EXECUTE     Claude runs every test case in a real browser, one action at a time.
+   │           It reads the screen after each action, adapts to the real UI, and
+   │           decides PASS / FAIL / BLOCKED with expected vs actual and a severity
+   ▼
+5. CLEAN UP    deletes every record the run created
+   ▼
+QA REPORT      what the AI understood · journeys · every test case with its executed
+               steps, expected vs actual, severity and screenshot · JSON + JUnit for CI
+```
+
+### Run it
+
+1. Install (once):
+   ```bash
+   git clone https://github.com/BushraKhalid97/qaagent.git
+   ```
+   ```bash
+   cd qaagent && npm install && npx playwright install chromium
+   ```
+2. Get a Claude API key at https://console.anthropic.com. Then either use the web console:
+   ```bash
+   ANTHROPIC_API_KEY=sk-ant-... node server.js
+   ```
+   and open http://localhost:4545. Choose **AI tester**, enter URL, username and
+   password, and tick **Allow creating, editing and deleting test data** if this
+   is a test environment.
+
+   Or use the command line:
+   ```bash
+   ANTHROPIC_API_KEY=sk-ant-... QA_USER=me@company.com QA_PASS=secret node agent.js --url https://test.myapp.com --allow-destructive
+   ```
+
+### Safe by design
+
+Testing creates, edits and deletes data, so the AI tester has safety rails
+**enforced in code**. They don't rely on the AI behaving:
+
+- **SAFE mode (default):** nothing is saved or deleted. Only read-only journeys
+  run; data-changing test cases are listed as skipped.
+- **FULL mode** (`--allow-destructive`): every record the tester creates has a
+  unique **run tag** in its name (e.g. `QA2A9F1 Refrigerated Van`). The tester
+  can **only edit or delete records that carry this tag**. If it tries to change
+  or delete existing business data, the click is refused and the attempt is
+  logged.
+- It never logs out, and it never confirms an "Are you sure?" popup unless that
+  popup follows an approved action on its own test data.
+- A network guard blocks data-changing requests (POST/PUT/PATCH/DELETE) that
+  don't carry the run tag and don't directly follow an approved action.
+- At the end, a cleanup pass removes everything with the run tag.
+
+Still, **run FULL mode against a test or staging environment**, not production.
+
+### Useful options
+
+```
+--allow-destructive        FULL mode (create / edit / delete tagged test data)
+--max-tests 30             how many test cases to write and run
+--instructions "..."       focus the tester, e.g. "concentrate on the invoice approval flow"
+--plan-only                explore + write the test plan (plan.json) without executing it
+--plan plan.json           run a saved (and optionally hand-edited) plan again: repeatable regression
+--only TC-003,TC-007       run selected test cases
+--max-steps 40             browser actions allowed per test case
+--model claude-opus-5-5    Claude model; --effort low|medium|high for execution depth
+--headed                   watch the browser while it tests
+```
+
+A good routine is to run `--plan-only` once, review or edit `qa-report/plan.json`,
+then run `--plan plan.json` on every release.
+
+### Cost
+
+Each run makes one planning request, plus roughly one request per browser action.
+A run of about 30 test cases usually takes a few hundred requests. The exact token
+use and estimated cost are printed at the end and shown in the report. To save
+money, use `--plan-only` and then rerun a saved plan, use `--only` to rerun just
+the failures, or lower `--effort`.
+
+### Limits
+
+- **Logins with CAPTCHA or SMS/MFA codes** can't be automated. Use a test account
+  without them.
+- **One account per run.** To test another role, run again with that account.
+- **File uploads, emails, payments** and anything else outside the browser can't
+  be completed. Those test cases end as BLOCKED, with the reason.
+- The AI judges results from what it sees on screen. **Review FAIL verdicts**
+  before filing bugs. Each one includes the exact steps, expected vs actual, and
+  a screenshot.
+
+---
+
+# Standard checks (no AI)
+
+The rest of this README covers `run.js`, the automatic checks that need no API
+key.
+
+
+## Setup (once)
 
 ```bash
 git clone https://github.com/BushraKhalid97/qaagent.git
@@ -18,7 +140,7 @@ npm install
 npx playwright install chromium
 ```
 
-## 2. Run it
+## Run the standard checks
 
 ### Option A: the web console (easiest)
 
@@ -57,7 +179,7 @@ reach. You can also put extra accounts in the env var `QA_LOGINS`, one
 
 ---
 
-## 3. What gets tested (automatically)
+## What gets tested (automatically)
 
 | Suite | Test cases | Fails when… |
 | --- | --- | --- |
@@ -94,7 +216,7 @@ To exercise create/update/delete flows too, use a **test environment** with
 
 ---
 
-## 4. Your own use cases (no code)
+## Your own use cases (no code)
 
 Write business test cases as JSON and pass them with `--scenarios file.json`.
 In the web console, paste the JSON into "Custom use cases".
@@ -135,7 +257,7 @@ which covers navigation, reports, and role-based access for the FleetFuel app.
 
 ---
 
-## 5. All options
+## All options (standard checks)
 
 ```
 --url <URL>             App to test (or env QA_URL)
@@ -158,7 +280,7 @@ which covers navigation, reports, and role-based access for the FleetFuel app.
 --out <dir>             Report folder (default qa-report)
 ```
 
-## 6. Output
+## Output
 
 ```
 qa-report/
@@ -168,7 +290,7 @@ qa-report/
   shots/        ← screenshots (desktop, mobile, tablet, failures)
 ```
 
-## 7. Limits
+## Limits (standard checks)
 
 - **CAPTCHA, SMS codes and other MFA** can't be automated. Use a test account
   without MFA, or point `--login-url` at a test-only login.

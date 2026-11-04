@@ -33,21 +33,27 @@ pre{background:#0d1117;color:#c9d1d9;padding:12px;border-radius:8px;max-height:4
 .v{font-weight:800;font-size:20px}.PASS{color:var(--pass)}.FAIL{color:var(--fail)}a{color:var(--acc)}table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}
 details summary{cursor:pointer;color:var(--mute);margin-top:12px}
 </style></head><body><main>
-<h1>AutoQA</h1><p style="color:var(--mute)">Enter the app's address and a login. AutoQA finds every screen, tests every button, dropdown, form and layout, and reports PASS or FAIL.</p>
+<h1>AutoQA</h1><p style="color:var(--mute)">Enter the app's address and a login. The AI tester explores the app, works out its business flows, writes test cases and runs each one like a manual tester; Standard checks test every screen, button and form automatically. Both end with a PASS/FAIL report.</p>
 <form class="card" id="f">
+<fieldset style="border:0;padding:0;margin:0 0 6px"><legend style="font-size:13px;color:var(--mute);margin-bottom:6px">Testing mode</legend>
+<label class="chk"><input type="radio" name="mode" value="ai" checked> <b>AI tester</b> — understands the business, writes and runs test cases like a manual tester (needs a Claude API key)</label>
+<label class="chk"><input type="radio" name="mode" value="checks"> <b>Standard checks</b> — crawls every screen and runs automatic UI / error / security checks (no AI)</label></fieldset>
 <label for="url">Application URL</label><input id="url" name="url" required placeholder="https://app.example.com">
 <div class="grid"><div><label for="user">Username / email</label><input id="user" name="user" autocomplete="off"></div>
 <div><label for="pass">Password</label><input id="pass" name="pass" type="password" autocomplete="new-password"></div></div>
-<label for="extra">Extra accounts to test (one per line, user:password) — for role-based apps</label><textarea id="extra" name="extra" rows="2" placeholder="manager@example.com:Secret123"></textarea>
+<label for="extra">Extra accounts to test (one per line, user:password) — Standard checks only</label><textarea id="extra" name="extra" rows="2" placeholder="manager@example.com:Secret123"></textarea>
+<div class="grid"><div><label for="apiKey">Claude API key (AI tester; leave empty if the server has ANTHROPIC_API_KEY)</label><input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
+<div><label for="maxTests">Max test cases (AI tester)</label><input id="maxTests" name="maxTests" type="number" value="30"></div></div>
+<label for="instructions">Focus / instructions for the AI tester (optional)</label><input id="instructions" name="instructions" placeholder="e.g. focus on the order checkout and refund flows">
+<label class="chk"><input type="checkbox" name="destructive"> <span><b>Allow creating, editing and deleting test data</b> — the AI tester only touches records it creates itself (tagged with a run id). Use a test environment.</span></label>
 <details><summary>Advanced options</summary>
 <div class="grid"><div><label for="maxPages">Max screens</label><input id="maxPages" name="maxPages" type="number" value="40"></div>
 <div><label for="maxClicks">Max clicks per screen</label><input id="maxClicks" name="maxClicks" type="number" value="25"></div>
 <div><label for="loginUrl">Login page URL (optional)</label><input id="loginUrl" name="loginUrl"></div></div>
 <label for="scen">Custom use cases (JSON, optional — see scenarios/*.json)</label><textarea id="scen" name="scen" rows="4" placeholder='{"scenarios":[{"name":"...","steps":[{"goto":"/"},{"expectText":"Welcome"}]}]}'></textarea>
-<label class="chk"><input type="checkbox" name="destructive"> Allow destructive actions (delete / save / submit) — test environments only</label>
 <label class="chk"><input type="checkbox" name="insecure"> Ignore HTTPS certificate errors</label>
 </details>
-<button id="go">Run QA</button></form>
+<button id="go">Start testing</button></form>
 <div class="card" id="out" hidden><div id="st"></div><pre id="log"></pre></div>
 <div class="card"><h2 style="margin-top:0;font-size:16px">Previous runs</h2><table id="hist"></table></div>
 </main><script>
@@ -73,18 +79,25 @@ function startRun(body) {
   const id = new Date().toISOString().replace(/[:.]/g, "-");
   const dir = path.join(ROOT, id);
   fs.mkdirSync(dir, { recursive: true });
-  const args = [path.join(__dirname, "run.js"), "--url", String(body.url), "--out", dir,
-    "--max-pages", String(+body.maxPages || 40), "--max-clicks", String(+body.maxClicks || 25)];
+  const ai = body.mode !== "checks";
+  const args = ai
+    ? [path.join(__dirname, "agent.js"), "--url", String(body.url), "--out", dir,
+      "--max-pages", String(+body.maxPages || 30), "--max-tests", String(+body.maxTests || 30)]
+    : [path.join(__dirname, "run.js"), "--url", String(body.url), "--out", dir,
+      "--max-pages", String(+body.maxPages || 40), "--max-clicks", String(+body.maxClicks || 25)];
+  if (ai && body.instructions) args.push("--instructions", String(body.instructions));
+  if (ai && !body.apiKey && !process.env.ANTHROPIC_API_KEY && !process.env.QA_AI_MOCK) throw new Error("The AI tester needs a Claude API key (field above, or ANTHROPIC_API_KEY on the server).");
   if (body.loginUrl) args.push("--login-url", String(body.loginUrl));
   if (body.destructive) args.push("--allow-destructive");
   if (body.insecure) args.push("--insecure");
-  if (body.scen && body.scen.trim()) {
+  if (!ai && body.scen && body.scen.trim()) {
     JSON.parse(body.scen); // validate
     const f = path.join(dir, "scenarios.json"); fs.writeFileSync(f, body.scen); args.push("--scenarios", f);
   }
   // credentials are passed via environment variables, never on the command line (visible in `ps`)
   const extras = String(body.extra || "").split(/\r?\n/).map((s) => s.trim()).filter((s) => s.includes(":"));
-  const env = { ...process.env, QA_USER: body.user || "", QA_PASS: body.pass || "", QA_LOGINS: extras.join("\n") };
+  const env = { ...process.env, QA_USER: body.user || "", QA_PASS: body.pass || "", QA_LOGINS: ai ? "" : extras.join("\n") };
+  if (body.apiKey) env.ANTHROPIC_API_KEY = String(body.apiKey);
   const run = { id, url: body.url, started: Date.now(), log: "", done: false, code: null, summary: null, result: null };
   runs.set(id, run);
   const child = spawn(process.execPath, args, { env });
