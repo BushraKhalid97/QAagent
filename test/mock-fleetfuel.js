@@ -32,10 +32,10 @@ const PLAN = {
     { name: "Review emissions", description: "Open the reports hub and drill into CO2", modules: ["Reports"] },
   ],
   testCases: [
-    { id: "TC-001", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Create, edit and delete a vehicle type", type: "create_edit_delete", priority: "P1", mutatesData: true, preconditions: "Logged in as admin", steps: ["Open Vehicle Types", "Enter '{TAG} Reefer Van' with idle 2.5", "Click 'Add type'", "Edit it: idle 3.1", "Delete it"], expectedResults: ["Row '{TAG} Reefer Van' appears", "Idle rate shows 3.1 L/h after edit", "Row is gone after delete"], testData: "{TAG} Reefer Van, idle 2.5 → 3.1, driving 10" },
-    { id: "TC-002", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Cannot add a vehicle type with an empty name", type: "validation", priority: "P2", mutatesData: false, preconditions: "", steps: ["Open Vehicle Types", "Leave name empty"], expectedResults: ["'Add type' is disabled"], testData: "empty" },
-    { id: "TC-003", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Safety rail: existing data cannot be deleted", type: "delete", priority: "P1", mutatesData: true, preconditions: "", steps: ["Open Vehicle Types", "Try to delete the existing 'Van' type"], expectedResults: ["The AI tester's guard refuses; 'Van' still exists"], testData: "existing row Van" },
-    { id: "TC-004", module: "Reports", journey: "Review emissions", title: "Reports hub opens the CO2 report", type: "navigation", priority: "P2", mutatesData: false, preconditions: "", steps: ["Open /reports", "Click 'CO₂ Consumption'"], expectedResults: ["CO2 report with data rows is shown"], testData: "none" },
+    { id: "TC-001", category: "crud", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Create, edit and delete a vehicle type", type: "create_edit_delete", priority: "P1", mutatesData: true, preconditions: "Logged in as admin", steps: ["Open Vehicle Types", "Enter '{TAG} Reefer Van' with idle 2.5", "Click 'Add type'", "Edit it: idle 3.1", "Delete it"], expectedResults: ["Row '{TAG} Reefer Van' appears", "Idle rate shows 3.1 L/h after edit", "Row is gone after delete"], testData: "{TAG} Reefer Van, idle 2.5 → 3.1, driving 10" },
+    { id: "TC-002", category: "field_validation", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Cannot add a vehicle type with an empty name", type: "validation", priority: "P2", mutatesData: false, preconditions: "", steps: ["Open Vehicle Types", "Leave name empty"], expectedResults: ["'Add type' is disabled"], testData: "empty" },
+    { id: "TC-003", category: "crud", module: "Vehicle Types", journey: "Maintain vehicle types", title: "Safety rail: existing data cannot be deleted", type: "delete", priority: "P1", mutatesData: true, preconditions: "", steps: ["Open Vehicle Types", "Try to delete the existing 'Van' type"], expectedResults: ["The AI tester's guard refuses; 'Van' still exists"], testData: "existing row Van" },
+    { id: "TC-004", category: "screens_buttons", module: "Reports", journey: "Review emissions", title: "Reports hub opens the CO2 report", type: "navigation", priority: "P2", mutatesData: false, preconditions: "", steps: ["Open /reports", "Click 'CO₂ Consumption'"], expectedResults: ["CO2 report with data rows is shown"], testData: "none" },
   ],
 };
 
@@ -45,6 +45,10 @@ function create({ tag }) {
     costUsd: () => 0,
     async create(params) {
       this.usage.requests++;
+      const sys = String(params.system || "");
+      if (/proofreader|localisation reviewer|UI\/UX reviewer/.test(sys)) {
+        return { content: [{ type: "text", text: JSON.stringify({ issues: [] }) }], stop_reason: "end_turn", usage: {} };
+      }
       if (params.output_config && params.output_config.format) {
         if (!/vehicle-types/.test(params.messages[0].content)) throw new Error("mock: app map did not include /vehicle-types");
         return { content: [{ type: "text", text: JSON.stringify(PLAN) }], stop_reason: "end_turn", usage: {} };

@@ -29,21 +29,36 @@ URL + login
    │           module manages (with their fields) and the user journeys, including
    │           journeys that cross modules
    ▼
-3. PLAN        Claude writes test cases like a QA lead:
-   │             P1  full lifecycle of every record: create → verify → edit → verify → delete → verify gone
-   │                 core workflows and cross-module effects
-   │             P2  validation (empty/invalid/duplicate input), search, filter, sort, paging, reports
-   │             P3  edge cases (special characters, boundaries, cancel, back/refresh)
+3. MAP         writes the TEST CASE MAPPING in 6 categories (see below)
    ▼
-4. EXECUTE     Claude runs every test case in a real browser, one action at a time.
+4. REVIEW      YOU review it in the console: untick, edit, or add test cases,
+   │           then click "Run QA". Nothing has run until you do.
+   ▼
+5. EXECUTE     runs only the approved test cases. AI-run cases: Claude works in a real
+   │           browser one action at a time, reads the screen after each action, adapts to
+   │           the real UI, and decides PASS / FAIL / BLOCKED with expected vs actual.
    │           It reads the screen after each action, adapts to the real UI, and
    │           decides PASS / FAIL / BLOCKED with expected vs actual and a severity
    ▼
-5. CLEAN UP    deletes every record the run created
+6. CLEAN UP    deletes every record the run created
    ▼
-QA REPORT      what the AI understood · journeys · every test case with its executed
-               steps, expected vs actual, severity and screenshot · JSON + JUnit for CI
+QA REPORT      results grouped by the 6 categories · what the AI understood · every test
+               case with its steps, expected vs actual and screenshots · JSON + JUnit for CI
 ```
+
+### The 6 test categories
+
+| # | Category | Test cases | How it's tested |
+| --- | --- | --- | --- |
+| 1 | **Screens & buttons** | one per screen, plus AI-written business workflows | Page loads with no errors, blank areas or broken data. Every safe button, tab, dropdown option and search box is used. Workflows like "new record appears in the report filter" are run step by step by the AI |
+| 2 | **Spelling, content & colour theme** | one per screen, plus one theme check | Claude proofreads all visible text (spelling, grammar, terminology, leftover technical text). Contrast is measured against WCAG AA. Colours and fonts are compared across all screens |
+| 3 | **Arabic** | language switch, plus one per screen | Finds the Arabic switch (العربية / Arabic / AR, `/ar`, `?lang=ar`, or the URL you give). Checks right-to-left layout and RTL overflow. Claude reviews untranslated English and Arabic wording |
+| 4 | **Field validation** | one per form, written by AI | Every field: empty required, invalid formats, negative or out-of-range numbers, too-long text, spaces, special and Arabic characters, duplicates |
+| 5 | **Add, edit & delete** | one per record type, written by AI | Create → verify → edit → verify → delete → verify gone, using tagged test data only |
+| 6 | **Responsive UI/UX** | one per screen | Mobile 375, tablet 768, laptop 1366 and desktop 1920: horizontal scroll, overlapping controls, text under 12px, tap targets under 32px, clipped text. Claude reviews the mobile and tablet screenshots for UX problems |
+
+Category 5, and any validation test that has to save data, only runs when
+**Allow creating, editing and deleting test data** is ticked.
 
 ### Run it
 
@@ -60,17 +75,27 @@ QA REPORT      what the AI understood · journeys · every test case with its ex
    ```
    Open `.env` and paste your key after `ANTHROPIC_API_KEY=`. Every run reads it
    automatically from then on. `.env` is private: Git ignores it, so it is never
-   uploaded to GitHub. **Never put the key in the code itself.** This repository is
-   public, and a key committed here can be used by anyone and is usually revoked
-   automatically within minutes.
+   uploaded to GitHub. **Never put the key in the code itself.** Everyone with
+   access to the repository could use it, and if the repository is ever public
+   it is usually revoked automatically within minutes.
 
 3. Start the web console:
    ```bash
    node server.js
    ```
-   Open http://localhost:4545. Choose **AI tester**, enter URL, username and
-   password, and tick **Allow creating, editing and deleting test data** if this
-   is a test environment.
+   Open http://localhost:4545 and then:
+   1. Choose **AI tester** and enter the URL, username and password. Tick
+      **Allow creating, editing and deleting test data** if this is a test
+      environment. If the app has Arabic at a special address, enter it under
+      "Arabic version URL".
+   2. Click **Generate test cases**. It explores the app and writes the mapping in
+      a few minutes. Nothing is tested yet.
+   3. Click **Review & approve test cases**. You'll see every test case grouped by
+      the 6 categories. Untick what you don't want, open **Details** to edit steps
+      and expected results, or use **+ Add test case** for your own.
+   4. Click **Run QA**. Only the ticked test cases run. When it finishes, open the
+      report. Your reviewed mapping is saved, so you can come back from **History**
+      and run it again.
 
    Or use the command line:
    ```bash

@@ -1,0 +1,62 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AutoQA Console</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#5d6678;--line:#e3e6ec;--acc:#0f766e;--pass:#127a3f;--fail:#b42318;--warn:#9a6700}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b1f27;--ink:#e6e9ef;--mute:#9aa3b5;--line:#2c323d;--acc:#2dd4bf;--pass:#5fd394;--fail:#ff8a7e;--warn:#f2c14e}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}main{max-width:980px;margin:0 auto;padding:24px 16px}
+h1{margin:0 0 4px}.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}input,select,textarea{width:100%;font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 14px}.chk{display:flex;gap:8px;align-items:flex-start;margin-top:10px;color:var(--ink);font-size:14px}.chk input{width:auto;margin-top:4px}
+button{font:inherit;font-weight:600;background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 20px;margin-top:16px;cursor:pointer}button:disabled{opacity:.5}
+pre{background:#0d1117;color:#c9d1d9;padding:12px;border-radius:8px;max-height:420px;overflow:auto;font-size:12px;white-space:pre-wrap}
+.v{font-weight:800;font-size:20px}.PASS,.READY{color:var(--pass)}.FAIL,.ERROR{color:var(--fail)}a{color:var(--acc)}
+.steps{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px;font-size:13px;color:var(--mute)}.steps span{background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:2px 10px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}.wrap{overflow-x:auto}
+details summary{cursor:pointer;color:var(--mute);margin-top:12px}.ai-only{}.checks-only{display:none}
+.cta{display:inline-block;margin-top:10px;background:var(--acc);color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-weight:600}
+</style></head><body><main>
+<h1>AutoQA</h1>
+<p class="sub">Give it your application's address and a login. The AI tester explores every screen, writes the test cases for you to review, and runs the ones you approve.</p>
+<div class="steps"><span>① Enter URL &amp; login</span><span>② Generate test cases</span><span>③ Review &amp; approve</span><span>④ Run QA → report</span></div>
+<form class="card" id="f">
+<fieldset style="border:0;padding:0;margin:0 0 6px"><legend style="font-size:13px;color:var(--mute);margin-bottom:6px">Testing mode</legend>
+<label class="chk"><input type="radio" name="mode" value="ai" checked> <span><b>AI tester</b>: test cases for review across 6 categories (screens and buttons, spelling and theme, Arabic, field validation, add/edit/delete, responsive UI). <span id="aiStatus"></span></span></label>
+<label class="chk"><input type="radio" name="mode" value="checks"> <span><b>Standard checks</b>: quick automatic checks of every screen, without AI or review</span></label></fieldset>
+<label for="url">Application URL</label><input id="url" name="url" required placeholder="https://app.example.com">
+<div class="grid"><div><label for="user">Username / email</label><input id="user" name="user" autocomplete="off"></div>
+<div><label for="pass">Password</label><input id="pass" name="pass" type="password" autocomplete="new-password"></div></div>
+<div class="ai-only">
+<div class="grid"><div><label for="maxTests">Max AI-written test cases (validation, add/edit/delete, workflows)</label><input id="maxTests" name="maxTests" type="number" value="40"></div>
+<div><label for="arabicUrl">Arabic version URL (optional, auto-detected)</label><input id="arabicUrl" name="arabicUrl" placeholder="e.g. https://app.example.com/ar or ?lang=ar"></div></div>
+<label for="instructions">Focus / instructions (optional)</label><input id="instructions" name="instructions" placeholder="e.g. focus on the order checkout and refund flows">
+</div>
+<label class="chk"><input type="checkbox" name="destructive"> <span><b>Allow creating, editing and deleting test data</b>. The tester only touches records it creates itself (tagged with a run id). Use a test environment.</span></label>
+<div class="checks-only"><label for="extra">Extra accounts (one per line, user:password)</label><textarea id="extra" name="extra" rows="2" placeholder="manager@example.com:Secret123"></textarea></div>
+<details><summary>Advanced options</summary>
+<div class="grid"><div><label for="maxPages">Max screens</label><input id="maxPages" name="maxPages" type="number" value="30"></div>
+<div><label for="loginUrl">Login page URL (optional)</label><input id="loginUrl" name="loginUrl"></div>
+<div class="checks-only"><label for="maxClicks">Max clicks per screen</label><input id="maxClicks" name="maxClicks" type="number" value="25"></div></div>
+<div class="checks-only"><label for="scen">Custom use cases (JSON)</label><textarea id="scen" name="scen" rows="4"></textarea></div>
+<label class="chk"><input type="checkbox" name="insecure"> Ignore HTTPS certificate errors</label>
+</details>
+<button id="go">Generate test cases</button></form>
+<div class="card" id="out" hidden><div id="st"></div><pre id="log"></pre></div>
+<div class="card"><h2 style="margin-top:0;font-size:16px">History</h2><div class="wrap"><table id="hist"></table></div></div>
+</main><script>
+const $=s=>document.querySelector(s);let timer;
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+fetch("/api/config").then(r=>r.json()).then(c=>{$("#aiStatus").innerHTML=c.aiReady?'<span class="PASS">✓ Claude key loaded from .env</span>':'<span class="FAIL">⚠ No Claude key: add ANTHROPIC_API_KEY to .env and restart</span>'});
+function mode(){const ai=$("input[name=mode]:checked").value==="ai";document.querySelectorAll(".ai-only").forEach(e=>e.style.display=ai?"":"none");document.querySelectorAll(".checks-only").forEach(e=>e.style.display=ai?"none":"");$("#go").textContent=ai?"Generate test cases":"Start testing"}
+document.querySelectorAll("input[name=mode]").forEach(r=>r.onchange=mode);mode();
+const kindLabel={plan:"Test cases",run:"QA run",checks:"Standard checks"};
+function link(x){if(!x.done)return "";if(x.kind==="plan")return x.result==="READY"?`<a href="/review/${x.id}">review &amp; run</a>`:`<a href="/runs/${x.id}/report.html" target="_blank">log</a>`;return `<a href="/runs/${x.id}/report.html" target="_blank">report</a>`}
+async function hist(){const r=await (await fetch("/api/runs")).json();$("#hist").innerHTML="<tr><th>When</th><th>Type</th><th>URL</th><th>Result</th><th></th></tr>"+r.map(x=>`<tr><td>${new Date(x.started).toLocaleString()}</td><td>${kindLabel[x.kind]||x.kind}</td><td>${esc(x.url)}</td><td class="${esc(x.result)}">${x.done?(x.kind==="plan"&&x.planCount?`${x.planCount} test cases`:esc(x.result||"ERROR")):"running…"}</td><td>${link(x)}</td></tr>`).join("")}
+async function poll(id){const r=await (await fetch("/api/runs/"+id)).json();$("#log").textContent=r.log;$("#log").scrollTop=1e9;
+if(!r.done){$("#st").textContent=r.kind==="plan"?"Exploring the application and writing test cases… (a few minutes)":"Running… (this can take a few minutes)";return}
+clearInterval(timer);$("#go").disabled=false;hist();
+if(r.kind==="plan"){$("#st").innerHTML=r.result==="READY"?`<span class="v READY">✓ ${r.planCount} test cases ready</span><br><a class="cta" href="/review/${id}">Review &amp; approve test cases →</a>`:`<span class="v ERROR">Could not generate test cases</span>. See the log below.`;return}
+$("#st").innerHTML=`<span class="v ${esc(r.result)}">${esc(r.result||"ERROR")}</span> ${r.summary?`— ${r.summary.total} tests · ${r.summary.pass} passed · ${r.summary.fail} failed · ${r.summary.warn} warnings`:""} · <a href="/runs/${id}/report.html" target="_blank">Open full report</a>`}
+$("#f").onsubmit=async e=>{e.preventDefault();const fd=Object.fromEntries(new FormData(e.target));$("#go").disabled=true;$("#out").hidden=false;$("#log").textContent="";$("#st").textContent="Starting…";
+const r=await fetch("/api/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(fd)});const j=await r.json();
+if(!j.id){$("#st").textContent=j.error;$("#go").disabled=false;return}clearInterval(timer);timer=setInterval(()=>poll(j.id),1500)};hist();
+</script></body></html>

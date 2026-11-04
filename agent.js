@@ -22,6 +22,12 @@ const { writeReports } = require("./lib/report");
 const { explore, appMapText } = require("./ai/explore");
 const { plan } = require("./ai/planner");
 const { runTestCase } = require("./ai/executor");
+const { runAutoCase } = require("./ai/autochecks");
+const { CATEGORY } = require("./ai/categories");
+
+/** Execution order: data-changing AI tests before layout/Arabic checks, Arabic last (it switches the UI language). */
+const RUN_ORDER = ["screens_buttons", "content_theme", "field_validation", "crud", "responsive", "arabic"];
+const catLabel = (tc) => (CATEGORY[tc.category] || CATEGORY.screens_buttons).label;
 
 const HELP = `
 AutoQA AI Tester — understands your app and tests it like a manual tester
@@ -45,6 +51,7 @@ Options:
   --only TC-001,TC-007   Run only these test cases
   --model <id>           Claude model (default claude-opus-5-5)
   --effort <level>       low | medium | high (default medium for execution; planning uses high)
+  --arabic-url <url>     Arabic version of the app, e.g. https://app.com/ar or "?lang=ar" (auto-detected if omitted)
   --login-url <url>      Login page, if not reachable from --url
   --headed               Watch the browser
   --insecure             Accept self-signed HTTPS certificates
@@ -139,37 +146,35 @@ async function main() {
     }
 
     // ── 4. execute ──
-    let cases = testPlan.testCases;
-    if (opts.only.length) cases = cases.filter((t) => opts.only.includes(t.id));
+    testPlan.testCases.forEach((t) => { if (!t.category) t.category = "screens_buttons"; if (!t.executor) t.executor = "ai"; });
+    let cases = testPlan.testCases.filter((t) => t.enabled !== false);
+    if (opts.only.length) cases = testPlan.testCases.filter((t) => opts.only.includes(t.id));
+    cases = [...cases].sort((a, b) => RUN_ORDER.indexOf(a.category) - RUN_ORDER.indexOf(b.category));
     if (opts.planOnly) {
-      cases.forEach((tc) => rec.add({ suite: tc.module, name: `${tc.id} ${tc.title}`, status: "skip", message: "planned (not executed: --plan-only)", evidence: planEvidence(tc, tag) }));
+      cases.forEach((tc) => rec.add({ suite: catLabel(tc), name: `${tc.id} ${tc.title}`, status: "skip", message: "planned — review and run", evidence: planEvidence(tc, tag) }));
+      console.log(`\nTest case mapping ready: ${cases.length} test case(s). Review ${path.join(out, "plan.json")} and run with --plan.`);
     } else {
       console.log(`\n3/4 Executing ${cases.length} test case(s)…`);
-      let anyMutation = false;
+      let anyMutation = false, cleanedUp = false;
+      const autoCtx = { page, monitor, llm, opts, origin, baseUrl, shotAt, ensureLoggedIn, onLoginScreen, screens: testPlan.screens || [], state: { arabic: {} } };
       for (const tc of cases) {
+        if (tc.category === "responsive" && anyMutation && !cleanedUp && allowMutation) { cleanedUp = true; await cleanupTestData(cases); }
         if (tc.mutatesData && !allowMutation) {
-          rec.add({ suite: tc.module, name: `${tc.id} ${tc.title}`, status: "skip", message: "Changes data — run with --allow-destructive on a test environment to execute", evidence: planEvidence(tc, tag) });
+          rec.add({ suite: catLabel(tc), name: `${tc.id} ${tc.title}`, status: "skip", message: "Changes data — tick 'Allow creating, editing and deleting test data' (or --allow-destructive) on a test environment to execute", evidence: planEvidence(tc, tag) });
           continue;
         }
-        console.log(`\n  ▶ ${tc.id} [${tc.priority}] ${tc.title}`);
-        anyMutation = anyMutation || tc.mutatesData;
-        const r = await runTestCase(tc, { llm, page, monitor, origin, baseUrl, tag, allowMutation, maxSteps: opts.maxSteps, shotAt, ensureLoggedIn, onLoginScreen, isRelogging: () => ctx.relogging, log: console.log });
-        recordResult(rec, tc, r, tag);
+        console.log(`\n  ▶ ${tc.id} [${catLabel(tc)}] ${tc.title}`);
+        if (tc.executor === "ai") {
+          anyMutation = anyMutation || tc.mutatesData;
+          const r = await runTestCase(tc, { llm, page, monitor, origin, baseUrl, tag, allowMutation, maxSteps: opts.maxSteps, shotAt, ensureLoggedIn, onLoginScreen, isRelogging: () => ctx.relogging, log: console.log });
+          recordResult(rec, tc, r, tag);
+        } else {
+          const t0 = Date.now();
+          const r = await runAutoCase(tc, autoCtx);
+          rec.add({ suite: catLabel(tc), name: `${tc.id} ${tc.title}`, status: r.status, message: r.message, evidence: [...tc.expectedResults.map((x) => `Expected: ${x}`), "— Results —", ...r.evidence], screenshot: r.screenshot || "", durationMs: Date.now() - t0 });
+        }
       }
-
-      // ── 5. clean up ──
-      if (allowMutation && anyMutation) {
-        console.log("\n4/4 Cleaning up test data…");
-        const modules = testPlan.modules.filter((m) => cases.some((c) => c.mutatesData && c.module === m.name));
-        const cleanup = {
-          id: "CLEANUP", module: "Cleanup", journey: "Remove test data", title: `Delete every record containing ${tag}`, type: "delete", priority: "P1", mutatesData: true,
-          preconditions: "Test cases have run and may have left records behind.",
-          steps: [`Visit each of these screens: ${[...new Set(modules.flatMap((m) => m.screens))].join(", ") || "all data screens"}`, `On each screen, look for any record whose name/text contains {TAG}`, "Delete each such record (confirm any confirmation dialog)", "Verify that no record containing {TAG} remains on any of those screens"],
-          expectedResults: ["No record containing {TAG} remains anywhere"], testData: "none",
-        };
-        const r = await runTestCase(cleanup, { llm, page, monitor, origin, baseUrl, tag, allowMutation, maxSteps: Math.max(opts.maxSteps, 40), shotAt, ensureLoggedIn, onLoginScreen, isRelogging: () => ctx.relogging, log: console.log });
-        rec.add({ suite: "Cleanup", name: `Remove all test data tagged ${tag}`, status: r.verdict.status === "pass" ? "pass" : "warn", message: r.verdict.status === "pass" ? r.verdict.summary : `Some test data may remain — search the app for "${tag}". ${r.verdict.summary}`, evidence: r.transcript, screenshot: r.screenshot });
-      }
+      if (allowMutation && anyMutation && !cleanedUp) await cleanupTestData(cases);
     }
   } catch (e) {
     console.error("\n✗ " + e.message);
@@ -179,6 +184,19 @@ async function main() {
     await browser.close().catch(() => {});
   }
 
+  async function cleanupTestData(cases) {
+    console.log("\n   Cleaning up test data…");
+    const modules = testPlan.modules.filter((m) => cases.some((c) => c.mutatesData && c.module === m.name));
+    const cleanup = {
+      id: "CLEANUP", module: "Cleanup", journey: "Remove test data", title: `Delete every record containing ${tag}`, type: "delete", priority: "P1", mutatesData: true,
+      preconditions: "Test cases have run and may have left records behind.",
+      steps: [`Visit each of these screens: ${[...new Set(modules.flatMap((m) => m.screens))].join(", ") || "all data screens"}`, "On each screen, look for any record whose name/text contains {TAG}", "Delete each such record (confirm any confirmation dialog)", "Verify that no record containing {TAG} remains on any of those screens"],
+      expectedResults: ["No record containing {TAG} remains anywhere"], testData: "none",
+    };
+    const r = await runTestCase(cleanup, { llm, page, monitor, origin, baseUrl, tag, allowMutation, maxSteps: Math.max(opts.maxSteps, 40), shotAt, ensureLoggedIn, onLoginScreen, isRelogging: () => ctx.relogging, log: console.log });
+    rec.add({ suite: "Cleanup", name: `Remove all test data tagged ${tag}`, status: r.verdict.status === "pass" ? "pass" : "warn", message: r.verdict.status === "pass" ? r.verdict.summary : `Some test data may remain — search the app for "${tag}". ${r.verdict.summary}`, evidence: r.transcript, screenshot: r.screenshot });
+  }
+
   const summary = rec.summary();
   const usage = llm.usage || {};
   const cost = llm.costUsd ? llm.costUsd() : null;
@@ -186,7 +204,7 @@ async function main() {
     meta: { url: opts.url, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started, safeMode: !allowMutation, tool: "AutoQA AI Tester 1.0" },
     accounts: acct ? [acct.user] : [],
     summary,
-    screens: (appMap ? appMap.screens : []).map((s) => ({ account: rec.account, path: s.path, url: s.url, title: s.title, shot: "" })),
+    screens: (appMap ? appMap.screens : (testPlan && testPlan.screens) || []).map((s) => ({ account: rec.account, path: s.path, url: s.url, title: s.title, shot: "" })),
     tests: rec.tests,
     ai: testPlan ? { app: testPlan.app, modules: testPlan.modules, journeys: testPlan.journeys, testCaseCount: testPlan.testCases.length, tag, model: opts.mock ? "mock" : opts.model, usage, costUsd: cost } : null,
   };
@@ -224,7 +242,7 @@ function recordResult(rec, tc, r, tag) {
   if (r.hardErrors.length) evidence.push("— Application errors —", ...r.hardErrors);
   if (tc.mutatesData && v.cleanedUp === false) evidence.push(`⚠ Test data may remain (search for "${tag}")`);
   rec.add({
-    suite: tc.module,
+    suite: catLabel(tc),
     name: `${tc.id} ${f(tc.title)}`,
     status,
     message: (v.status === "blocked" ? "BLOCKED: " : v.status === "fail" ? `[${v.severity}] ` : "") + v.summary,

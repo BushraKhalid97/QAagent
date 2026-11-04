@@ -5,6 +5,7 @@
  * plus a prioritised list of manual-style test cases.
  */
 const { textOf } = require("./llm");
+const { CATEGORIES, CATEGORY, buildScreenCases } = require("./categories");
 
 const PLAN_SCHEMA = {
   type: "object",
@@ -44,9 +45,10 @@ const PLAN_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        required: ["id", "module", "journey", "title", "type", "priority", "mutatesData", "preconditions", "steps", "expectedResults", "testData"],
+        required: ["id", "category", "module", "journey", "title", "type", "priority", "mutatesData", "preconditions", "steps", "expectedResults", "testData"],
         properties: {
           id: { type: "string", description: "TC-001, TC-002, …" },
+          category: { type: "string", enum: ["screens_buttons", "field_validation", "crud"], description: "screens_buttons = business workflows, navigation, search/filter/sort, reports; field_validation = input validation of form fields; crud = add / edit / delete lifecycles" },
           module: { type: "string" },
           journey: { type: "string" },
           title: { type: "string" },
@@ -70,10 +72,13 @@ Your job:
    In "modules", list EVERY functional area of the app (usually one per main menu entry or screen group, e.g. Dashboard, Reports, Users, Settings), each with its screens and records — not just the first one. Every test case's "module" must be one of these module names.
 2. Write the test cases a meticulous manual tester would execute against it.
 
-Coverage to aim for, in priority order:
-- P1: for every record type that can be created: a full lifecycle test — create it, confirm it appears in the list, open/edit it, confirm the change is shown, delete it, confirm it is gone. Core business workflows and cross-module effects (e.g. "a newly created item appears as an option in the report filter").
-- P2: validation — required fields left empty, invalid formats (email, numbers, negative values, dates), duplicates, overly long text; each with the error the user should see or the action being prevented. Search, filters, sorting and pagination returning correct results. Reports/dashboards reflecting the data.
-- P3: edge cases — special characters and unicode in text fields, boundary values, cancelling a form leaves data unchanged, browser back/refresh keeps the app consistent.
+Other parts of the system already generate, per screen: page-load and click-every-button checks, spelling and colour-theme checks, Arabic/RTL checks and responsive-layout checks. YOUR test cases cover three categories:
+
+category "crud" — Add, edit & delete (P1): for EVERY record type that can be created anywhere in the app, one full lifecycle test: create it, confirm it appears in the list, open/edit it, confirm the change is shown, delete it, confirm it is gone. Also add/edit/delete inside other records (e.g. line items) if present.
+
+category "field_validation" — Field validation (P2): cover EVERY input field on EVERY form in the app map. Group the fields of one form into one test case per form (or per tab of a large form). For each field test what applies: required field left empty; invalid format (email, phone, URL, date, number); negative / zero / out-of-range numbers; text too long (e.g. 300 characters); leading/trailing spaces; special characters and Arabic/unicode text accepted where text is allowed; duplicates where names must be unique. State the expected behaviour: error message shown next to the field, or the save button disabled, or the value rejected — and that nothing invalid is saved. If valid data must be saved to complete the test, use {TAG} and delete it afterwards.
+
+category "screens_buttons" — Screens & business workflows (P1–P3): end-to-end business journeys, including cross-module effects (e.g. "a newly created item appears as an option in the report filter"); search, filters, sorting and pagination returning correct results; reports and dashboards reflecting the data; links and drill-downs going to the right place; cancelling a form leaves data unchanged; browser back/refresh keeps the app consistent.
 
 Rules for every test case:
 - Base it ONLY on screens, controls and fields that are present in the app map; refer to them by their visible labels. Never invent features.
@@ -83,7 +88,7 @@ Rules for every test case:
 - Do not include logging out, changing your own password, deleting or disabling your own user account, or bulk "reset/clear all data" actions.
 - Steps are concrete user actions ("Click 'Add type'", "Enter '{TAG} Van' in 'Type name'"). Expected results are observable on screen ("A success message is shown", "The table contains a row '{TAG} Van' with idle rate 2.5 L/h").
 - Mark mutatesData=true for any test that creates, edits or deletes.
-- Stay within the requested maximum number of test cases; when you must choose, prefer P1, then breadth across modules.`;
+- Stay within the requested maximum number of test cases. Make sure every record type has a crud test and every form has a field_validation test before adding more screens_buttons workflows.`;
 
 async function plan(llm, { appMap, mapText, maxTests, account, allowMutation, extraInstructions }) {
   const user = `APP MAP (${appMap.screens.length} screens, explored as ${account || "anonymous user"}):
@@ -100,9 +105,15 @@ Write the test plan now. Maximum ${maxTests} test cases.${allowMutation ? "" : "
   if (msg.stop_reason === "max_tokens") throw new Error("Test plan was cut off (too long). Lower --max-tests.");
   const planJson = JSON.parse(textOf(msg));
   planJson.testCases = planJson.testCases.slice(0, maxTests);
+  planJson.testCases.forEach((tc) => { tc.executor = "ai"; tc.enabled = true; if (!CATEGORY[tc.category]) tc.category = "screens_buttons"; });
+  // per-screen test cases (all screens × categories 1, 2, 3, 6), then sort into category order
+  planJson.screens = appMap.screens.map((s) => ({ path: s.path, url: s.url, title: s.title }));
+  const order = Object.fromEntries(CATEGORIES.map((c, i) => [c.key, i]));
+  planJson.testCases = [...buildScreenCases(appMap.screens), ...planJson.testCases]
+    .sort((a, b) => order[a.category] - order[b.category]);
   // safety net: every module referenced by a test case appears in the module list
   const known = new Set(planJson.modules.map((m) => m.name));
-  for (const tc of planJson.testCases) {
+  for (const tc of planJson.testCases.filter((t) => t.executor === "ai")) {
     if (!known.has(tc.module)) {
       known.add(tc.module);
       planJson.modules.push({ name: tc.module, purpose: "(referenced by test cases)", screens: [], records: [] });

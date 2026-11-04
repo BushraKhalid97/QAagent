@@ -1,0 +1,139 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Review Test Cases</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#5d6678;--line:#e3e6ec;--acc:#0f766e;--accbg:#e6f4f2;--pass:#127a3f;--fail:#b42318;--warn:#9a6700;--warnbg:#fff4d6}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b1f27;--ink:#e6e9ef;--mute:#9aa3b5;--line:#2c323d;--acc:#2dd4bf;--accbg:#123331;--pass:#5fd394;--fail:#ff8a7e;--warn:#f2c14e;--warnbg:#3a2d0c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;padding-bottom:110px}
+main{max-width:1100px;margin:0 auto;padding:20px 16px}a{color:var(--acc)}h1{margin:4px 0;font-size:22px}h2{margin:0;font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.mute{color:var(--mute)}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:4px 12px;font-size:13px;cursor:pointer;color:var(--ink)}.chip b{color:var(--acc)}
+.sec-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.sec-actions{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 12px}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;padding:10px 22px}button:disabled{opacity:.5;cursor:default}
+table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:8px 6px;border-top:1px solid var(--line);vertical-align:top}
+td.c{width:30px}td.id{width:78px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--mute)}
+.meta{font-size:12px;color:var(--mute);margin-top:2px}.badge{display:inline-block;font-size:11px;font-weight:600;border-radius:99px;padding:1px 8px;margin-left:4px}
+.b-auto{background:var(--accbg);color:var(--acc)}.b-ai{background:#ece8fb;color:#5b3fc4}.b-data{background:var(--warnbg);color:var(--warn)}
+@media (prefers-color-scheme:dark){.b-ai{background:#2a2346;color:#b9a8ff}}
+tr.off td{opacity:.45}tr.det td{padding:0 6px 12px 36px;border-top:0}
+.edit{display:grid;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px}
+.edit label{font-size:12px;color:var(--mute)}input,select,textarea{width:100%;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+input[type=checkbox]{width:16px;height:16px}
+ol,ul{margin:4px 0;padding-left:20px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.06)}
+.bar-in{max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.bar .count{font-weight:600}.grow{flex:1}.chk{display:flex;gap:6px;align-items:center;font-size:13px}.chk input{width:auto}
+#creds{display:none;gap:6px}#creds input{width:160px}
+pre{background:#0d1117;color:#c9d1d9;padding:12px;border-radius:8px;max-height:380px;overflow:auto;font-size:12px;white-space:pre-wrap}
+.v{font-weight:800;font-size:20px}.PASS{color:var(--pass)}.FAIL{color:var(--fail)}.err{color:var(--fail)}
+</style></head><body><main>
+<a href="/">← Back to console</a>
+<div class="card" id="head"><p class="mute">Loading test cases…</p></div>
+<div class="card" id="runbox" hidden><div id="st"></div><pre id="log"></pre></div>
+<div id="sections"></div>
+</main>
+<div class="bar"><div class="bar-in">
+<span class="count" id="count"></span><span class="mute" id="saved"></span><span class="grow"></span>
+<label class="chk"><input type="checkbox" id="destructive"> Allow creating / editing / deleting test data</label>
+<span id="creds"><input id="cuser" placeholder="Username"><input id="cpass" type="password" placeholder="Password (needed again)"></span>
+<button id="save">Save changes</button><button class="primary" id="run">Run QA</button>
+</div></div>
+<script>
+const CATS=[
+ {key:"screens_buttons",label:"1. Screens & buttons",desc:"Every screen loads and every button, tab, dropdown and search works; business workflows"},
+ {key:"content_theme",label:"2. Spelling, content & colour theme",desc:"Spelling and grammar of all text, readable contrast, consistent colours and fonts"},
+ {key:"arabic",label:"3. Arabic",desc:"Arabic language switch, right-to-left layout, untranslated or wrong text"},
+ {key:"field_validation",label:"4. Field validation",desc:"Every field on every form rejects empty, invalid, too long and wrong-format input"},
+ {key:"crud",label:"5. Add, edit & delete",desc:"Full create → edit → delete lifecycle of every record type"},
+ {key:"responsive",label:"6. Responsive UI/UX",desc:"Every screen on mobile, tablet, laptop and desktop sizes"}];
+const id=location.pathname.split("/").pop();
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let data,plan,open=new Set(),dirty=false,timer;
+
+async function load(){
+  const r=await fetch("/api/plans/"+id);const j=await r.json();
+  if(!r.ok){$("#head").innerHTML=`<p class="err">${esc(j.error)}</p>`;return}
+  data=j;plan=j.plan;plan.testCases.forEach(t=>{if(t.enabled===undefined)t.enabled=true});
+  $("#destructive").checked=!!j.meta.destructive;
+  if(!j.hasCreds){$("#creds").style.display="flex";$("#cuser").value=j.meta.user||""}
+  renderHead();renderSections();
+}
+function renderHead(){
+  const a=plan.app||{};
+  const chips=CATS.map(c=>{const ts=plan.testCases.filter(t=>t.category===c.key);return `<span class="chip" onclick="document.getElementById('sec-${c.key}').scrollIntoView({behavior:'smooth'})">${esc(c.label)} · <b>${ts.filter(t=>t.enabled).length}</b>/${ts.length}</span>`}).join("");
+  $("#head").innerHTML=`<div class="mute">Test case mapping for ${esc(data.meta.url)}${data.meta.user?` · ${esc(data.meta.user)}`:""}</div>
+  <h1>${esc(a.name||"Application")}</h1><div>${esc(a.summary||"")}</div>
+  <div class="meta">${(plan.screens||[]).length} screens explored · ${(plan.modules||[]).length} modules · ${(plan.journeys||[]).length} user journeys</div>
+  <p class="mute" style="margin:10px 0 0">Review the test cases below. Untick any you don't want, open <b>Details</b> to edit steps and expected results, or add your own. Then click <b>Run QA</b>. Only ticked test cases run.</p>
+  <div class="chips">${chips}</div>`;
+  updateCount();
+}
+function rowHtml(t){
+  const auto=t.executor&&t.executor!=="ai";
+  const where=t.screen||t.module||"";
+  return `<tr class="${t.enabled?"":"off"}" data-id="${esc(t.id)}">
+   <td class="c"><input type="checkbox" ${t.enabled?"checked":""} aria-label="Include ${esc(t.id)}" onchange="toggle('${esc(t.id)}',this.checked)"></td>
+   <td class="id">${esc(t.id)}</td>
+   <td><div>${esc(t.title)}</div><div class="meta">${esc(where)} · ${esc(t.priority||"")}
+     <span class="badge ${auto?"b-auto":"b-ai"}">${auto?"automatic check":"AI-run steps"}</span>${t.mutatesData?'<span class="badge b-data">changes data</span>':""}</div></td>
+   <td style="width:90px;text-align:right"><button onclick="toggleDetails('${esc(t.id)}')">${open.has(t.id)?"Hide":"Details"}</button></td></tr>
+   ${open.has(t.id)?detailsHtml(t,auto):""}`;
+}
+function detailsHtml(t,auto){
+  const ro=auto?"readonly":"";
+  return `<tr class="det"><td colspan="4"><div class="edit">
+   ${auto?'<div class="mute">Automatic check: these steps describe what is measured and can\'t be edited. Untick the test case to skip it.</div>':""}
+   <div><label>Title</label><input ${ro} value="${esc(t.title)}" oninput="setField('${esc(t.id)}','title',this.value)"></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label>Priority</label><select ${auto?"disabled":""} onchange="setField('${esc(t.id)}','priority',this.value)">${["P1","P2","P3"].map(p=>`<option ${t.priority===p?"selected":""}>${p}</option>`).join("")}</select></div>
+   <div><label>Module / screen</label><input ${ro} value="${esc(t.module||t.screen||"")}" oninput="setField('${esc(t.id)}','module',this.value)"></div></div>
+   ${t.preconditions&&!auto?`<div><label>Preconditions</label><input value="${esc(t.preconditions)}" oninput="setField('${esc(t.id)}','preconditions',this.value)"></div>`:""}
+   <div><label>Steps (one per line)</label><textarea ${ro} rows="${Math.min(10,(t.steps||[]).length+1)}" oninput="setList('${esc(t.id)}','steps',this.value)">${esc((t.steps||[]).join("\n"))}</textarea></div>
+   <div><label>Expected results (one per line)</label><textarea ${ro} rows="${Math.min(8,(t.expectedResults||[]).length+1)}" oninput="setList('${esc(t.id)}','expectedResults',this.value)">${esc((t.expectedResults||[]).join("\n"))}</textarea></div>
+   ${!auto?`<div><label>Test data</label><input value="${esc(t.testData||"")}" oninput="setField('${esc(t.id)}','testData',this.value)"></div>
+   <label class="chk"><input type="checkbox" ${t.mutatesData?"checked":""} onchange="setField('${esc(t.id)}','mutatesData',this.checked)"> This test creates, edits or deletes data</label>
+   ${t.custom?`<div><button onclick="removeCase('${esc(t.id)}')">Remove this test case</button></div>`:""}`:""}
+  </div></td></tr>`;
+}
+function renderSections(){
+  $("#sections").innerHTML=CATS.map(c=>{
+    const ts=plan.testCases.filter(t=>t.category===c.key);
+    return `<section class="card" id="sec-${c.key}"><div class="sec-head"><div><h2>${esc(c.label)} <span class="mute" style="font-weight:400">(${ts.filter(t=>t.enabled).length} of ${ts.length} selected)</span></h2><div class="mute">${esc(c.desc)}</div></div>
+     <div class="sec-actions"><button onclick="setAll('${c.key}',true)">Select all</button><button onclick="setAll('${c.key}',false)">Select none</button><button onclick="addCase('${c.key}')">+ Add test case</button></div></div>
+     ${ts.length?`<table>${ts.map(rowHtml).join("")}</table>`:'<p class="mute">No test cases in this category.</p>'}</section>`}).join("");
+  renderHead();
+}
+function find(i){return plan.testCases.find(t=>t.id===i)}
+function changed(){dirty=true;$("#saved").textContent="Unsaved changes"}
+function toggle(i,v){find(i).enabled=v;changed();renderSections()}
+function setAll(cat,v){plan.testCases.filter(t=>t.category===cat).forEach(t=>t.enabled=v);changed();renderSections()}
+function toggleDetails(i){open.has(i)?open.delete(i):open.add(i);renderSections()}
+function setField(i,f,v){find(i)[f]=v;changed()}
+function setList(i,f,v){find(i)[f]=v.split("\n");changed()}
+function addCase(cat){
+  const n=plan.testCases.filter(t=>/^USR-/.test(t.id)).length+1;const tid="USR-"+String(n).padStart(2,"0");
+  plan.testCases.push({id:tid,category:cat,executor:"ai",custom:true,module:"",journey:"Added by reviewer",title:"New test case: describe what to check",type:"workflow",priority:"P2",mutatesData:false,preconditions:"Logged in",steps:["Open the screen …","Click …"],expectedResults:["… is shown"],testData:"",enabled:true});
+  open.add(tid);changed();renderSections();setTimeout(()=>document.querySelector(`tr[data-id="${tid}"]`).scrollIntoView({behavior:"smooth",block:"center"}),50);
+}
+function removeCase(i){plan.testCases=plan.testCases.filter(t=>t.id!==i);open.delete(i);changed();renderSections()}
+function updateCount(){const on=plan.testCases.filter(t=>t.enabled);const data=on.filter(t=>t.mutatesData).length;
+  $("#count").textContent=`${on.length} of ${plan.testCases.length} test cases selected`;
+  $("#run").textContent=`Run QA (${on.length})`;$("#run").disabled=!on.length;
+  if(data&&!$("#destructive").checked)$("#saved").textContent=`${data} selected test case(s) change data and will be skipped unless "Allow creating / editing / deleting" is ticked`;}
+$("#destructive").onchange=()=>{updateCount()};
+$("#save").onclick=async()=>{const r=await fetch("/api/plans/"+id,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({plan})});const j=await r.json();$("#saved").textContent=r.ok?"✓ Saved":"⚠ "+j.error;if(r.ok)dirty=false};
+$("#run").onclick=async()=>{
+  const body={plan,destructive:$("#destructive").checked,user:$("#cuser").value,pass:$("#cpass").value};
+  $("#run").disabled=true;$("#runbox").hidden=false;$("#st").textContent="Starting…";$("#log").textContent="";$("#runbox").scrollIntoView({behavior:"smooth"});
+  const r=await fetch(`/api/plans/${id}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const j=await r.json();
+  if(!j.id){$("#st").innerHTML=`<span class="err">${esc(j.error)}</span>`;$("#run").disabled=false;return}
+  dirty=false;$("#saved").textContent="✓ Saved";clearInterval(timer);timer=setInterval(()=>poll(j.id),1500);
+};
+async function poll(rid){const r=await (await fetch("/api/runs/"+rid)).json();$("#log").textContent=r.log;$("#log").scrollTop=1e9;
+  if(!r.done){$("#st").textContent="Running QA… (results appear in the log below; this can take a while)";return}
+  clearInterval(timer);$("#run").disabled=false;
+  $("#st").innerHTML=`<span class="v ${esc(r.result)}">${esc(r.result||"ERROR")}</span> ${r.summary?`: ${r.summary.total} checks · ${r.summary.pass} passed · ${r.summary.fail} failed · ${r.summary.warn} warnings · ${r.summary.skip} skipped`:""} · <a href="/runs/${rid}/report.html" target="_blank">Open full QA report</a>`}
+window.onbeforeunload=()=>dirty?"You have unsaved changes":undefined;
+load();
+</script></body></html>
