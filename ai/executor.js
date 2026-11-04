@@ -20,6 +20,7 @@ const { sleep, pathOf } = require("../lib/util");
 const DESTRUCTIVE = /\b(delete|remove|destroy|purge|reset|clear all|erase|revoke|terminate|archive|deactivate|disable|ban|block)\b/i;
 const MODIFY = /\b(edit|update|modify|rename|change|save|submit|confirm|apply|yes|ok|approve|reject|cancel order|toggle|enable|activate|assign|move|duplicate|clone|publish|send)\b/i;
 const CREATE = /\b(add|create|new|register|invite|post|insert|book|upload|import)\b/i;
+const VIEW_ONLY = /^(\W*)(reset|clear|remove)( all)? (filters?|search|selection|sorting|sort|columns?|date range)\b|^(\W*)(cancel|close|back|dismiss)\W*$/i;
 const LOGOUT = /\b(log ?out|sign ?out|log off|logoff)\b/i;
 const ARM_MS = 15000;
 
@@ -100,6 +101,8 @@ async function inspect(loc) {
 function guard(info, { tag, allowMutation, armed }) {
   const label = `${info.label} ${info.title}`;
   if (LOGOUT.test(label)) return { allow: false, reason: "Logging out is not allowed during a test run." };
+  // view-only controls that merely contain a risky word ("Reset filters", "Clear search", "Cancel")
+  if (VIEW_ONLY.test(label.trim())) return { allow: true };
   const destructive = DESTRUCTIVE.test(label);
   const modify = MODIFY.test(label) && !info.isLink;
   const create = CREATE.test(label) && !info.isLink;

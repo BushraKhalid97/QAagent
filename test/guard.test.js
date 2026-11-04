@@ -26,6 +26,11 @@ const cases = [
   ["reset all data button", el("Reset to sample data"), full, false],
   ["navigation link", el("Reports", { isLink: true }), full, true],
   ["plain filter button", el("Apply filters"), full, true],
+  ["reset filters (found in real run)", el("↺ Reset filters"), full, true],
+  ["reset filters in safe mode", el("Reset filters"), safe, true],
+  ["clear search", el("Clear search"), full, true],
+  ["cancel button", el("Cancel"), full, true],
+  ["reset password is NOT view-only", el("Reset password", { row: "admin@iotcube.ai" }), full, false],
   ["safe mode delete own record", el("Delete", { row: `${TAG} Van` }), safe, false],
   ["safe mode save (network guard blocks it)", el("Save", { form: { text: `${TAG}`, hasInputs: true, filled: true } }), safe, true],
 ];

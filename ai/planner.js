@@ -67,6 +67,7 @@ const SYSTEM = `You are a senior QA lead. You have been handed a web application
 
 Your job:
 1. Work out what business this application serves, what its modules are, which business records each module manages (with their fields), and the end-to-end journeys real users perform — including journeys that cross modules (e.g. a record created in one module appearing in another module's lists, filters or reports).
+   In "modules", list EVERY functional area of the app (usually one per main menu entry or screen group, e.g. Dashboard, Reports, Users, Settings), each with its screens and records — not just the first one. Every test case's "module" must be one of these module names.
 2. Write the test cases a meticulous manual tester would execute against it.
 
 Coverage to aim for, in priority order:
@@ -99,6 +100,14 @@ Write the test plan now. Maximum ${maxTests} test cases.${allowMutation ? "" : "
   if (msg.stop_reason === "max_tokens") throw new Error("Test plan was cut off (too long). Lower --max-tests.");
   const planJson = JSON.parse(textOf(msg));
   planJson.testCases = planJson.testCases.slice(0, maxTests);
+  // safety net: every module referenced by a test case appears in the module list
+  const known = new Set(planJson.modules.map((m) => m.name));
+  for (const tc of planJson.testCases) {
+    if (!known.has(tc.module)) {
+      known.add(tc.module);
+      planJson.modules.push({ name: tc.module, purpose: "(referenced by test cases)", screens: [], records: [] });
+    }
+  }
   return planJson;
 }
 
