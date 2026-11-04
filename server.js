@@ -37,14 +37,13 @@ details summary{cursor:pointer;color:var(--mute);margin-top:12px}
 <h1>AutoQA</h1><p style="color:var(--mute)">Enter the app's address and a login. The AI tester explores the app, works out its business flows, writes test cases and runs each one like a manual tester; Standard checks test every screen, button and form automatically. Both end with a PASS/FAIL report.</p>
 <form class="card" id="f">
 <fieldset style="border:0;padding:0;margin:0 0 6px"><legend style="font-size:13px;color:var(--mute);margin-bottom:6px">Testing mode</legend>
-<label class="chk"><input type="radio" name="mode" value="ai" checked> <b>AI tester</b> — understands the business, writes and runs test cases like a manual tester (needs a Claude API key)</label>
+<label class="chk"><input type="radio" name="mode" value="ai" checked> <b>AI tester</b> — understands the business, writes and runs test cases like a manual tester <span id="aiStatus" class="msg"></span></label>
 <label class="chk"><input type="radio" name="mode" value="checks"> <b>Standard checks</b> — crawls every screen and runs automatic UI / error / security checks (no AI)</label></fieldset>
 <label for="url">Application URL</label><input id="url" name="url" required placeholder="https://app.example.com">
 <div class="grid"><div><label for="user">Username / email</label><input id="user" name="user" autocomplete="off"></div>
 <div><label for="pass">Password</label><input id="pass" name="pass" type="password" autocomplete="new-password"></div></div>
 <label for="extra">Extra accounts to test (one per line, user:password) — Standard checks only</label><textarea id="extra" name="extra" rows="2" placeholder="manager@example.com:Secret123"></textarea>
-<div class="grid"><div><label for="apiKey">Claude API key (AI tester; leave empty if the server has ANTHROPIC_API_KEY)</label><input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
-<div><label for="maxTests">Max test cases (AI tester)</label><input id="maxTests" name="maxTests" type="number" value="30"></div></div>
+<div class="grid"><div><label for="maxTests">Max test cases (AI tester)</label><input id="maxTests" name="maxTests" type="number" value="30"></div></div>
 <label for="instructions">Focus / instructions for the AI tester (optional)</label><input id="instructions" name="instructions" placeholder="e.g. focus on the order checkout and refund flows">
 <label class="chk"><input type="checkbox" name="destructive"> <span><b>Allow creating, editing and deleting test data</b> — the AI tester only touches records it creates itself (tagged with a run id). Use a test environment.</span></label>
 <details><summary>Advanced options</summary>
@@ -59,6 +58,7 @@ details summary{cursor:pointer;color:var(--mute);margin-top:12px}
 <div class="card"><h2 style="margin-top:0;font-size:16px">Previous runs</h2><table id="hist"></table></div>
 </main><script>
 const $=s=>document.querySelector(s);let timer;
+fetch("/api/config").then(r=>r.json()).then(c=>{$("#aiStatus").innerHTML=c.aiReady?'<span class="PASS">✓ Claude key loaded from .env</span>':'<span class="FAIL">⚠ No Claude key found: add ANTHROPIC_API_KEY to the .env file and restart</span>'});
 async function hist(){const r=await (await fetch("/api/runs")).json();$("#hist").innerHTML="<tr><th>When</th><th>URL</th><th>Result</th><th></th></tr>"+r.map(x=>\`<tr><td>\${new Date(x.started).toLocaleString()}</td><td>\${x.url.replace(/</g,"&lt;")}</td><td class="\${x.result||""}">\${x.done?(x.result||"ERROR"):"running…"}</td><td>\${x.done?\`<a href="/runs/\${x.id}/report.html" target="_blank">report</a>\`:""}</td></tr>\`).join("")}
 async function poll(id){const r=await (await fetch("/api/runs/"+id)).json();$("#log").textContent=r.log;$("#log").scrollTop=1e9;
 $("#st").innerHTML=r.done?\`<span class="v \${r.result}">\${r.result||"ERROR"}</span> \${r.summary?\`— \${r.summary.total} tests · \${r.summary.pass} passed · \${r.summary.fail} failed · \${r.summary.warn} warnings\`:""} · <a href="/runs/\${id}/report.html" target="_blank">Open full report</a>\`:"Running… (this can take a few minutes)";
@@ -75,6 +75,9 @@ function readBody(req) {
   });
 }
 
+/** The Claude key comes only from the server side (.env or environment) — never from the browser. */
+const aiReady = () => !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.QA_AI_MOCK);
+
 function startRun(body) {
   if (!body.url) throw new Error("URL is required");
   const id = new Date().toISOString().replace(/[:.]/g, "-");
@@ -87,7 +90,7 @@ function startRun(body) {
     : [path.join(__dirname, "run.js"), "--url", String(body.url), "--out", dir,
       "--max-pages", String(+body.maxPages || 40), "--max-clicks", String(+body.maxClicks || 25)];
   if (ai && body.instructions) args.push("--instructions", String(body.instructions));
-  if (ai && !body.apiKey && !process.env.ANTHROPIC_API_KEY && !process.env.QA_AI_MOCK) throw new Error("The AI tester needs a Claude API key (field above, or ANTHROPIC_API_KEY on the server).");
+  if (ai && !aiReady()) throw new Error("The AI tester needs a Claude API key: add ANTHROPIC_API_KEY=... to the .env file in the project folder, then restart the console.");
   if (body.loginUrl) args.push("--login-url", String(body.loginUrl));
   if (body.destructive) args.push("--allow-destructive");
   if (body.insecure) args.push("--insecure");
@@ -98,7 +101,6 @@ function startRun(body) {
   // credentials are passed via environment variables, never on the command line (visible in `ps`)
   const extras = String(body.extra || "").split(/\r?\n/).map((s) => s.trim()).filter((s) => s.includes(":"));
   const env = { ...process.env, QA_USER: body.user || "", QA_PASS: body.pass || "", QA_LOGINS: ai ? "" : extras.join("\n") };
-  if (body.apiKey) env.ANTHROPIC_API_KEY = String(body.apiKey);
   const run = { id, url: body.url, started: Date.now(), log: "", done: false, code: null, summary: null, result: null };
   runs.set(id, run);
   const child = spawn(process.execPath, args, { env });
@@ -126,6 +128,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (u.pathname === "/" && req.method === "GET") return send(200, PAGE, MIME[".html"]);
     if (u.pathname === "/api/run" && req.method === "POST") return send(200, { id: startRun(await readBody(req)).id });
+    if (u.pathname === "/api/config") return send(200, { aiReady: aiReady() }); // never exposes the key itself
     if (u.pathname === "/api/runs") return send(200, [...runs.values()].sort((a, b) => b.started - a.started).map(({ log, ...r }) => r));
     const m = u.pathname.match(/^\/api\/runs\/([\w-]+)$/);
     if (m) { const r = runs.get(m[1]); return r ? send(200, r) : send(404, { error: "not found" }); }
