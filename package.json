@@ -1,0 +1,15 @@
+{
+  "name": "autoqa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated QA runner: give it a URL + login and it discovers every screen, runs UI/functional/a11y/responsive/security checks and reports PASS/FAIL.",
+  "bin": { "autoqa": "run.js" },
+  "scripts": {
+    "qa": "node run.js",
+    "ui": "node server.js",
+    "setup": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

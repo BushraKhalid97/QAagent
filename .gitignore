@@ -1,0 +1,4 @@
+node_modules/
+qa-report/
+qa-runs/
+.DS_Store

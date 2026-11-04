@@ -1,0 +1,93 @@
+{
+  "description": "Business use cases for the FleetFuel app. Each scenario runs after login. 'accounts' limits a scenario to specific logins (role-based checks).",
+  "scenarios": [
+    {
+      "name": "Overview dashboard shows fleet snapshot",
+      "steps": [
+        { "goto": "/" },
+        { "expectText": "Fleet Overview" },
+        { "expectNoText": "NaN" }
+      ]
+    },
+    {
+      "name": "Navigate Overview → Idling Analysis via sidebar",
+      "steps": [
+        { "goto": "/" },
+        { "click": "a[href='/idling']" },
+        { "expectUrl": "/idling" },
+        { "expectText": "Idling Fuel & Cost Analysis" },
+        { "expectVisible": "table" }
+      ]
+    },
+    {
+      "name": "Reports hub links to all three reports",
+      "steps": [
+        { "goto": "/reports" },
+        { "expectText": "Reports" },
+        { "expectVisible": "a[href='/reports/idling-fuel']" },
+        { "expectVisible": "a[href='/reports/co2']" },
+        { "expectVisible": "a[href='/reports/cost-wastage']" }
+      ]
+    },
+    {
+      "name": "Idling Fuel report table has data rows",
+      "steps": [
+        { "goto": "/reports/idling-fuel" },
+        { "expectCount": "table tbody tr", "min": 1 },
+        { "screenshot": "idling-fuel-report" }
+      ]
+    },
+    {
+      "name": "CO2 report loads with data",
+      "steps": [
+        { "goto": "/reports/co2" },
+        { "expectCount": "table tbody tr", "min": 1 }
+      ]
+    },
+    {
+      "name": "Cost Wastage report loads with data",
+      "steps": [
+        { "goto": "/reports/cost-wastage" },
+        { "expectCount": "table tbody tr", "min": 1 }
+      ]
+    },
+    {
+      "name": "Super Admin can open user management",
+      "accounts": ["superadmin@iotcube.ai"],
+      "steps": [
+        { "goto": "/users" },
+        { "expectText": "Users" },
+        { "expectNoText": "don't have permission" },
+        { "expectVisible": "table" }
+      ]
+    },
+    {
+      "name": "Operations Manager cannot see admin menu items",
+      "accounts": ["manager@iotcube.ai"],
+      "steps": [
+        { "goto": "/" },
+        { "expectNotVisible": "a[href='/data']" },
+        { "expectNotVisible": "a[href='/vehicle-types']" },
+        { "expectNotVisible": "a[href='/settings']" },
+        { "expectNotVisible": "a[href='/users']" }
+      ]
+    },
+    {
+      "name": "Operations Manager is denied user management",
+      "accounts": ["manager@iotcube.ai"],
+      "allowHttp": [403],
+      "steps": [
+        { "goto": "/users" },
+        { "expectText": "permission" }
+      ]
+    },
+    {
+      "name": "Operations Manager cannot edit Settings (role has no manage_settings)",
+      "accounts": ["manager@iotcube.ai"],
+      "steps": [
+        { "goto": "/settings" },
+        { "expectNoText": "Save settings" }
+      ]
+    }
+  ]
+}
