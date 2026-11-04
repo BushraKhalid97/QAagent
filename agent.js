@@ -12,6 +12,7 @@
  *
  *   ANTHROPIC_API_KEY=… QA_USER=… QA_PASS=… node agent.js --url https://app.example.com --allow-destructive
  */
+require("./lib/env"); // reads your private .env (API key etc.)
 const fs = require("fs");
 const path = require("path");
 const { parseArgs, normalizeUrl, pathOf, slug, sleep } = require("./lib/util");

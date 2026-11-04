@@ -8,6 +8,7 @@
  *   PORT=8080 HOST=0.0.0.0 node server.js   (expose on a network — protect it!)
  */
 const http = require("http");
+require("./lib/env"); // reads your private .env (API key etc.)
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");

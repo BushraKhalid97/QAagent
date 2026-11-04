@@ -2,3 +2,8 @@ node_modules/
 qa-report/
 qa-runs/
 .DS_Store
+
+# private settings (API keys, passwords) — never commit
+.env
+.env.*
+!.env.example

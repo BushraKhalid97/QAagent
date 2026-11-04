@@ -54,18 +54,44 @@ QA REPORT      what the AI understood · journeys · every test case with its ex
    ```bash
    cd qaagent && npm install && npx playwright install chromium
    ```
-2. Get a Claude API key at https://console.anthropic.com. Then either use the web console:
+2. Save your Claude API key once (get one at https://console.anthropic.com → API Keys):
    ```bash
-   ANTHROPIC_API_KEY=sk-ant-... node server.js
+   cp .env.example .env
    ```
-   and open http://localhost:4545. Choose **AI tester**, enter URL, username and
+   Open `.env` and paste your key after `ANTHROPIC_API_KEY=`. Every run reads it
+   automatically from then on. `.env` is private: Git ignores it, so it is never
+   uploaded to GitHub. **Never put the key in the code itself.** This repository is
+   public, and a key committed here can be used by anyone and is usually revoked
+   automatically within minutes.
+
+3. Start the web console:
+   ```bash
+   node server.js
+   ```
+   Open http://localhost:4545. Choose **AI tester**, enter URL, username and
    password, and tick **Allow creating, editing and deleting test data** if this
    is a test environment.
 
    Or use the command line:
    ```bash
-   ANTHROPIC_API_KEY=sk-ant-... QA_USER=me@company.com QA_PASS=secret node agent.js --url https://test.myapp.com --allow-destructive
+   QA_USER=me@company.com QA_PASS=secret node agent.js --url https://test.myapp.com --allow-destructive
    ```
+
+### Using the key on servers and in CI
+
+Don't commit `.env`. Store the key in the platform's secret settings, which
+pass it to the app as the `ANTHROPIC_API_KEY` environment variable:
+
+| Where it runs | Where to put the key |
+| --- | --- |
+| Your computer | `.env` file (above) |
+| GitHub Actions | Repo → Settings → Secrets and variables → Actions → `ANTHROPIC_API_KEY`; use `${{ secrets.ANTHROPIC_API_KEY }}` |
+| Vercel | Project → Settings → Environment Variables → `ANTHROPIC_API_KEY` |
+| Docker / a server | `docker run -e ANTHROPIC_API_KEY=...`, or the server's environment settings |
+
+Any other solution of yours that calls Claude through the official Anthropic SDK
+reads `ANTHROPIC_API_KEY` the same way, so one key in the right secret store
+covers all of them.
 
 ### Safe by design
 

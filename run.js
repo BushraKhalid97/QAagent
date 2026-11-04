@@ -9,6 +9,7 @@
  *
  *   node run.js --url https://app.example.com --user me@example.com --pass secret
  */
+require("./lib/env"); // reads your private .env (API key etc.)
 const fs = require("fs");
 const path = require("path");
 const { parseArgs, normalizeUrl, pathOf, slug, SKIP_URL, DOWNLOAD_EXT, sleep } = require("./lib/util");
