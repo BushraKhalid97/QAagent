@@ -12,7 +12,8 @@ just FleetFuel.
 ## 1. Setup (once)
 
 ```bash
-git clone https://github.com/BushraKhalid97/QAagent.git && cd QAagent
+git clone https://github.com/BushraKhalid97/qaagent.git
+cd qaagent
 npm install
 npx playwright install chromium
 ```
